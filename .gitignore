@@ -1,0 +1,5 @@
+# 依赖与编辑器临时文件
+node_modules/
+.DS_Store
+Thumbs.db
+*.log

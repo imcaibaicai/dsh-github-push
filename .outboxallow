@@ -1,0 +1,3 @@
+# 本仓库是 outbox 内核的发布产物，内嵌内核由 scripts/sync-plugin.mjs 生成。
+# 内核里解析凭据的代码必然出现「口令字段名 + 等号」字面量，会被宽泛规则命中。
+lib/outbox.mjs    password-assign
