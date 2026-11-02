@@ -1,45 +1,64 @@
-# dsh-github-push
+# dsh-github-push (v0.2.0)
 
-> DeepSeek Harness 插件：**一句话把本地目录推送到 GitHub**。
+> DeepSeek Harness 插件与跨 Agent 全自动静默推送引擎：**一句话把本地目录可靠推送到 GitHub**。
 
-注册一个模型工具 `github_push`。你对 Agent 说「把这个项目开源到 GitHub」，它就能走完全程：
-探测代理 → 自愈 gh 登录态 → 扫描密钥与个人信息 → 建仓/提交/推送 → 回读远端 SHA 校验。
+专为 AI Coding Agent（DSH、Claude Code、Cursor、Cline 等）设计的零外部依赖 GitHub 发布体系。彻底解决传统 Agent 推送时「频繁反问确认、依赖外部 CLI 报错、过程日志污染主上下文、代理隧道 TLS 握手抖动、Token 泄漏进会话」等核心痛点。
 
-内核来自 [outbox](https://github.com/imcaibaicai/outbox) 项目，本仓库是它的**发布产物**（内嵌内核由
-`scripts/sync-plugin.mjs` 自动同步，不是手写的第二实现）。
+---
 
-## 它替你挡掉了什么
+## 核心设计与特性
 
-| 常见故障 | 处理方式 |
-|---|---|
-| `gh` 突然报未登录，但 `git push` 明明正常 | 登录态文件会被清空，token 却还在系统凭据管理器里 —— 自动取回并重新校验 |
-| 代理时通时不通，或关掉代理后命令卡死 | 先探测 `127.0.0.1:7890`：通则**按次注入**，不通则只清掉指向该端口的陈旧变量后直连 |
-| 推到一半卡在输密码 | 子进程一律禁止交互询问，宁可明确失败也不静默挂起 |
-| 密钥被推上公开仓库 | 推送前扫描**即将提交的索引**，命中高危内容直接阻断并列出文件与行号 |
-| 命令返回 0，但推的其实是旧东西 | 回读远端分支，要求**远端 SHA 严格等于本地 HEAD** 才算成功 |
-| 仓库里写死了本机用户目录路径 | 扫描绝对路径中的用户名、身份证号、手机号等，命中后**禁止自动公开** |
+1. **绝对静默与托收承办（Zero Confirmation）**
+   - 彻底摒弃「向用户反问仓库名或公开私有」的设计缺陷；
+   - **托收默认规则**：未显式说明开源时无条件默认设为 `private`（确保安全底线）；若远端已存在同名仓库则自动继承远端属性；
+   - 仓库名自动根据目录名规范化；本地无 Git 自动初始化 `main` 分支；自动暂存并生成规范提交信息。
 
-## 工具契约：`github_push`
+2. **大模型零信任凭据气闸（Credential Airlock）**
+   - **大模型完全脱敏**：模型入参只需传递占位符 `{{vault:github}}`；
+   - **本地安全翻译**：Windows 平台直接通过 Win32 API (`advapi32.dll::CredRead`) 从系统凭据管理器直读 Git 令牌；跨平台支持回退环境变量 `GITHUB_TOKEN`；
+   - **动态 Scrub 过滤器**：所有子进程日志、网络错误堆栈与 JSON 报告均经由正则气闸清洗，真实 Token 永不出机、永不写入对话上下文、永不存入 `.git/config`。
 
-| 参数 | 必填 | 说明 |
+3. **网络自愈与 TLS 加固**
+   - 强制 Git 使用 OpenSSL 后端（`-c http.sslBackend=openssl`），彻底消除 Windows Schannel 在本地 HTTP 代理隧道下的间歇性握手抖动；
+   - 智能多路代理探测（优先嗅探 `127.0.0.1:7890`，备选 `7897`、`10808` 及环境变量），网络不可达时快速失败报警，拒绝无限挂起；
+   - 关键网络操作（鉴权、API 建仓、Git 推送）内置 3 次指数退避重试；双通道（`git ls-remote` + REST API）回读远端 SHA 比对核验。
+
+4. **主会话零上下文污染**
+   - 支持通过轻量子代理（`subagent`）单步承办，所有中间 Git 报文在子代理独立内存中销毁；
+   - 主会话历史仅接收最终的 3 行结构化成功卡片，对首字延迟（TTFT）与上下文预算零负担。
+
+---
+
+## 痛点对比表
+
+| 常见问题 | 传统做法 / v0.1.0 | v0.2.0 加固引擎 |
 |---|---|---|
-| `dir` | ✅ | 要发布的目录，**必须是绝对路径** |
-| `visibility` | ✅ | `public` / `private` / `ask` |
-| `name` | | 远端仓库名，默认由目录名规整而来 |
-| `description` | | 仓库描述 |
-| `message` | | 提交信息 |
-| `dryRun` | | 只预检，不提交不推送 |
+| 命令执行报 gh 未找到 | 强制依赖外部安装 GitHub CLI | 纯 Node.js 原生 + 系统 Git，彻底消除 gh 依赖 |
+| 反复停下来向用户提问 | 强制 ask 选项，中途打断用户 | 托收默认规则，默认 private，全程零交互确认 |
+| 代理隧道 TLS 握手假失败 | 默认 Windows Schannel 偶发抖动 | 显式指定 OpenSSL 后端 + 3次退避重试，0 抖动 |
+| 凭据容易泄露给大模型 | 环境变量或命令参数携带明文 Token | 零信任凭据气闸，模型仅见占位符，本地内存直读 |
+| 大量 Git 日志拖慢会话 | 主会话逐步敲命令打印 50+ 行日志 | 支持子代理单步隔离执行，主会话零日志污染 |
 
-**可见性规则（刻意设计成不能由模型代劳）**：用户明确说公开/开源才传 `public`；
-明确说私有才传 `private`；**其它情况一律 `ask`** —— 此时工具不会创建任何远端仓库，
-只做预检并返回需要确认的问题，由 Agent 拿去问用户。
+---
 
-安全闸门命中个人信息时，即使请求了 `public` 也会停下来要求逐条确认。
+## 快速使用
 
-## 安装
+### 1. 作为独立 CLI 运行
 
-本插件是标准的 DSH host 插件（在 `cordis.patch.yml` 里插一行 loader 行）。
-把包放进 profile 的 `node_modules`，然后加一行：
+```bash
+# 全托收静默推送当前项目（默认 private）
+node bin/push.mjs --dir "C:\path\to\project"
+
+# 明确指定公开开源
+node bin/push.mjs --dir "C:\path\to\project" --visibility public
+
+# 仅做预检（干跑）
+node bin/push.mjs --dir "C:\path\to\project" --dryRun
+```
+
+### 2. 作为 DSH 插件安装
+
+本插件是标准 DSH host 插件。在 `cordis.patch.yml` 中添加配置：
 
 ```yaml
 - insert:
@@ -47,15 +66,22 @@
       name: 'dsh-github-push'
 ```
 
-**host 插件在启动时装载，必须完全退出 DSH 再重启才生效。**
+启动 DSH 后，Agent 即可调用原生模型工具 `github_push`。
 
-> 不想装插件也行：同一份内核还有命令行外壳与 Agent 通用 `SKILL.md`，见 [outbox](https://github.com/imcaibaicai/outbox)。
+### 3. 作为 AI Agent 调度使用
 
-## 相关项目
+在 Agent 系统规则中引入约定：
 
-- [outbox](https://github.com/imcaibaicai/outbox) —— 内核本体，同时提供 CLI 与 Agent 通用 Skill
-- [dsh-plugin-publish](https://github.com/suyukun/dsh-plugin-publish) —— 面向 Agent 技能的发布流程协议，与本插件互补
+```javascript
+// 主 Agent 仅需发起 1 次子代理调用：
+subagent({
+  description: "静默推送代码到 GitHub",
+  prompt: "执行以下命令将目录推送到 GitHub：\nnode bin/push.mjs --dir \"<绝对路径>\"\n执行完成后仅汇报最终卡片，严禁向用户提问确认。"
+});
+```
+
+---
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -1,10 +1,13 @@
 {
   "name": "dsh-github-push",
-  "version": "0.1.0",
-  "description": "DSH 插件：把 outbox 内核注册成模型工具，一句话把本地目录可靠地推送到 GitHub —— 代理自动探测（默认 7890）、gh 登录态自愈、推送前密钥与个人信息扫描、推送后 SHA 回读校验。",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness 插件与独立工具：一键静默将本地目录推送到 GitHub。零外部依赖（免 gh CLI），大模型零信任凭据气闸（Token 永不出机），网络自动代理探测与 TLS 加固，全流程自动化托收与 SHA 回读校验。",
   "type": "module",
   "license": "MIT",
   "main": "lib/index.js",
+  "bin": {
+    "dsh-github-push": "./bin/push.mjs"
+  },
   "exports": {
     ".": {
       "default": "./lib/index.js"
@@ -12,8 +15,9 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "bin/push.mjs",
     "lib/index.js",
-    "lib/outbox.mjs"
+    "lib/engine.mjs"
   ],
   "engines": {
     "node": ">=18"
@@ -25,6 +29,7 @@
     "github",
     "git",
     "push",
-    "publish"
+    "silent-push",
+    "agent-tools"
   ]
 }
