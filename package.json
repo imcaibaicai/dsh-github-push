@@ -17,7 +17,8 @@
   "files": [
     "bin/push.mjs",
     "lib/index.js",
-    "lib/engine.mjs"
+    "lib/engine.mjs",
+    "cordis.patch.yml"
   ],
   "engines": {
     "node": ">=18"
@@ -31,5 +32,10 @@
     "push",
     "silent-push",
     "agent-tools"
-  ]
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }
