@@ -1,0 +1,5 @@
+# dsh.bundle patch for dsh-github-push: inserts its plugin row into the profile roster.
+# Applied as a profile bundle layer via package.json dsh.bundle.patch.
+- insert:
+    - id: github-push
+      name: 'dsh-github-push'
